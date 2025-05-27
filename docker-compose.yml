@@ -1,0 +1,214 @@
+x-environment: &default-environment
+# Name of the databse. 'used in core.settings.py'
+  POSTGRES_DB: "decrees"
+# Default user for interaction with postgres psycopg client. 'used in core.settings.py'
+  POSTGRES_USER: "postgres"
+# Default postgres port. 'used in core.settings.py'
+  POSTGRES_PORT: 5432
+# Default postgres HOST. 'used in core.settings.py'
+  POSTGRES_HOST: "db"
+# Default URL for redis cache services. 'used in core.settings.py'
+  REDIS_URL_DB: "redis://redis:6379/1"
+# Default URLs for celery background services. 'used in core.settings.py'
+  CELERY_BROKER_URL: "redis://redis:6379/2"
+  CELERY_RESULT_BACKEND: "redis://redis:6379/3"
+# Time interval between db backups in seconds.
+  BACKUP_INTERVAL: "86400"
+# Maximum number of days backups are allowed to be saved.
+  RETENTION_DAYS: "7"
+# List of allowed hosts to visit the web application. 'used in core.settings.py'
+  ALLOWED_HOSTS: "beta2.eidc.gov.ly,localhost,127.0.0.1,0.0.0.0,192.168.20.92"
+# Base URL for the web application. 'used in core.settings.py'
+  BASE_URL: "https://beta2.eidc.gov.ly"
+# Debug status for the web application. 'used in core.settings.py'
+  DEBUG_STATUS: "False"
+# SSL status for the web application. 'used in core.settings.py'
+  SSL_STATUS: "True"
+# and postgres_password SHOULD BE KEPT SAFE using docker secrets or similar.
+  DJANGO_SECRET_KEY: "7Y2PbUqVRcr3_NVMxAPstmxNe1Wbe5O77734-MOY453XHtFnxe8XF1JzxkFZYALCQ78"
+  POSTGRES_PASSWORD: "db123123"
+  PGADMIN_DEFAULT_EMAIL: "admin@exmple.com"
+  PGADMIN_DEFAULT_PASSWORD: "db123123"
+
+services:
+  # Main database server Postgres 17
+  db:
+    image: postgres:17
+    container_name: dc_db
+    restart: unless-stopped
+    environment:
+      <<: *default-environment
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+
+  # Main cache server Redis 7
+  redis:
+    image: redis:7
+    container_name: dc_cache
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory", "500mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "6379:6379"
+
+  # Web-based Postgres database manager pgAdmin 4
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    environment:
+      <<: *default-environment
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - db
+
+  # On-call service, collects staticfiles, runs migrations, and exits.
+  migrator:
+    image: debeski/decrees:stable
+    container_name: dc_migrator
+    restart: "no"
+    command: ["python", "manage.py", "migrator"]
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      <<: *default-environment
+    volumes:
+      - users_migrations:/app/users/migrations
+      - documents_migrations:/app/documents/migrations
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+      - logs_volume:/app/logs
+    depends_on:
+      - db
+      - redis
+
+  # Background tasks server Celery
+  celery:
+    image: debeski/decrees:stable
+    container_name: dc_celery
+    restart: unless-stopped
+    command: ["celery", "-A", "core", "worker", "-B", "--loglevel=info"]
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      <<: *default-environment
+    volumes:
+      - media_volume:/app/media
+      - static_volume:/app/staticfiles
+      - logs_volume:/app/logs
+    depends_on:
+      - db
+      - redis
+
+  # Main Decrees Django application
+  web:
+    image: debeski/decrees:stable
+    container_name: dc_app
+    restart: unless-stopped
+    user: "1001:1001"
+    command: ["gunicorn", "-c", "gunicorn.py", "core.wsgi:application"]
+    entrypoint: ["/app/entrypoint.sh"]
+    environment:
+      <<: *default-environment
+    volumes:
+      - ./imports:/app/imports
+      - media_volume:/app/media
+      - static_volume:/app/staticfiles
+      - logs_volume:/app/logs
+      - users_migrations:/app/users/migrations
+      - documents_migrations:/app/documents/migrations
+    depends_on:
+      - db
+      - redis
+
+  # Nginx reverse proxy server
+  nginx:
+    image: debeski/nginx:dc
+    container_name: dc_proxy
+    ports:
+      - "4200:80"
+    volumes:
+      - media_volume:/app/media
+      - static_volume:/app/staticfiles
+    depends_on:
+      - web
+    environment:
+      <<: *default-environment
+
+  # Portainer server for managing docker containers
+  portainer:
+    image: portainer/portainer-ce:lts
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    environment:
+      - TZ=Africa/Tripoli
+
+  # Database backup service
+  db-backup:
+    image: postgres:17
+    container_name: dc_db_backup
+    restart: unless-stopped
+    command: >
+      bash -c '
+      while true; do
+          # Use environment variables directly instead of secrets
+          export PGPASSWORD=$$POSTGRES_PASSWORD
+          backup_file="/backups/backup_$$(date +%Y-%m-%d_%H-%M-%S).pgdump"
+
+          echo "Starting backup: $$backup_file"
+          
+          # Retry the pg_dump if it fails
+          attempts=0
+          max_attempts=5
+          until pg_dump -Fc -h $$DB_HOST -U $$POSTGRES_USER $$POSTGRES_DB -f $$backup_file || [ $$attempts -ge $$max_attempts ]; do
+              echo "pg_dump failed, retrying..."
+              attempts=$$((attempts+1))
+              sleep 5
+          done
+          
+          if [ $$attempts -ge $$max_attempts ]; then
+              echo "Backup failed after $$attempts attempts" >&2
+              rm -f $$backup_file
+          else
+              echo "Backup successful: $$backup_file"
+              find /backups -name "*.pgdump" -mtime +$$RETENTION_DAYS -delete
+          fi
+          sleep $$BACKUP_INTERVAL
+      done'
+    environment:
+      <<: *default-environment
+    volumes:
+      - db_backups:/backups
+    depends_on:
+      - db
+
+  # List of mounted volumes to all services
+volumes:
+  postgres_data:
+  redis_data:
+  media_volume:
+  static_volume:
+  logs_volume:
+  users_migrations:
+  documents_migrations:
+  pgadmin_data:
+  db_backups:
+  portainer_data:

@@ -19,7 +19,7 @@ x-environment: &default-environment
 # List of allowed hosts to visit the web application. 'used in core.settings.py'
   ALLOWED_HOSTS: "beta2.eidc.gov.ly,localhost,127.0.0.1,0.0.0.0,192.168.20.34"
 # Base URL for the web application. 'used in core.settings.py'
-  BASE_URL: "https://beta2.eidc.gov.ly"
+  BASE_URL: "http://192.168.20.34:4200"
 # Debug status for the web application. 'used in core.settings.py'
   DEBUG_STATUS: "True"
 # SSL status for the web application. 'used in core.settings.py'

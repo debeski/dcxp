@@ -21,9 +21,9 @@ x-environment: &default-environment
 # Base URL for the web application. 'used in core.settings.py'
   BASE_URL: "https://beta2.eidc.gov.ly"
 # Debug status for the web application. 'used in core.settings.py'
-  DEBUG_STATUS: "False"
+  DEBUG_STATUS: "True"
 # SSL status for the web application. 'used in core.settings.py'
-  SSL_STATUS: "True"
+  SSL_STATUS: "False"
 # and postgres_password SHOULD BE KEPT SAFE using docker secrets or similar.
   DJANGO_SECRET_KEY: "7Y2PbUqVRcr3_NVMxAPstmxNe1Wbe5O77734-MOY453XHtFnxe8XF1JzxkFZYALCQ78"
   POSTGRES_PASSWORD: "db123123"

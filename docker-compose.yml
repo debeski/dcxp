@@ -19,11 +19,11 @@ x-environment: &default-environment
 # List of allowed hosts to visit the web application. 'used in core.settings.py'
   ALLOWED_HOSTS: "beta2.eidc.gov.ly,localhost,127.0.0.1,0.0.0.0,192.168.20.34"
 # Base URL for the web application. 'used in core.settings.py'
-  BASE_URL: "http://192.168.20.34:4200"
+  BASE_URL: "https://beta2.eidc.gov.ly"
 # Debug status for the web application. 'used in core.settings.py'
-  DEBUG_STATUS: "True"
+  DEBUG_STATUS: "False"
 # SSL status for the web application. 'used in core.settings.py'
-  SSL_STATUS: "False"
+  SSL_STATUS: "True"
 # and postgres_password SHOULD BE KEPT SAFE using docker secrets or similar.
   DJANGO_SECRET_KEY: "7Y2PbUqVRcr3_NVMxAPstmxNe1Wbe5O77734-MOY453XHtFnxe8XF1JzxkFZYALCQ78"
   POSTGRES_PASSWORD: "db123123"
